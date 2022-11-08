@@ -45,7 +45,7 @@ class MyMap {
         return findNextMatchingEntry(
                 key,
                 [key](MyMapEntry* found){
-                    return *found->key == key;
+                    return *(found->key) == key;
                 },
                 [key](MyMapEntry* found){
                     return found == nullptr || found->isEmpty();
@@ -62,7 +62,7 @@ class MyMap {
         return findNextMatchingEntry(
                 key,
                 [key](MyMapEntry* found){
-                    return found == nullptr || *found->key == key || found->isEmpty();
+                    return found == nullptr || *(found->key) == key || found->isEmpty();
                 }
         );
     }
@@ -110,7 +110,7 @@ class MyMap {
         for(int i = 0; i < oldCapacity; i++) {
             MyMapEntry* entry = oldEntries[i];
             if(entry != nullptr && !entry->isEmpty()) {
-                put(*entry->key, *entry->value);
+                put(*(entry->key), *(entry->value));
             }
         }
 
@@ -265,7 +265,7 @@ public:
         int stopper = 0;
         for(int i = 0; i < capacity && stopper < size; i++) {
             if(entries[i] != nullptr && !entries[i]->isEmpty()) {
-                ss << "    `" << *entries[i]->key << "` = `" << *entries[i]->value << "`\n";
+                ss << "    `" << *(entries[i]->key) << "` = `" << *(entries[i]->value) << "`\n";
             }
             stopper++;
         }

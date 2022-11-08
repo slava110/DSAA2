@@ -10,3 +10,5 @@ add_executable(Main main.cpp)
 add_executable(task_2_1 task_2_1/main.cpp)
 
 add_executable(task_2_2 task_2_2/main.cpp)
+
+add_executable(task_2_3 task_2_3/main.cpp)
