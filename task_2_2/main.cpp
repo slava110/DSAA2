@@ -5,9 +5,21 @@
 #include <sstream>
 #include <map>
 
+/**
+ * Хэш-функция
+ * @tparam K тип ключа хэш-таблицы
+ * @param key ключ хэш-таблицы
+ * @return хэш ключа
+ */
 template <typename K>
 using HashFunction = size_t(const K& key);
 
+/**
+ * Простейшая реализация хэш-функции
+ * @tparam K тип ключа хэш-таблицы
+ * @param key ключ хэш-таблицы
+ * @return хэш ключа
+ */
 template <typename K>
 size_t simpleHasher(const K& key) {
     return std::hash<K>(key);
@@ -273,6 +285,12 @@ public:
 
 };
 
+/**
+ * Реализация хэш-функции для строки
+ * @tparam K тип ключа хэш-таблицы
+ * @param key ключ хэш-таблицы
+ * @return хэш ключа
+ */
 template <typename K>
 size_t strHash(const K& key) {
     size_t h = 37;
@@ -342,8 +360,6 @@ std::map<std::string, std::function<void(std::istringstream&)>> initCommands(
 }
 
 int main() {
-    //testMe();
-
     auto myMap = new MyMap<std::string, std::string, strHash>();
 
     std::map<std::string, std::function<void(std::istringstream&)>> commands = initCommands(myMap);
