@@ -10,7 +10,7 @@ using HashFunction = size_t(const K& key);
 
 template <typename K>
 size_t simpleHasher(const K& key) {
-    return reinterpret_cast<unsigned long>(key);
+    return std::hash<K>(key);
 }
 
 template <typename K, typename V, HashFunction<K> HASHER = simpleHasher>
@@ -37,63 +37,6 @@ class MyMap {
     }
 
     /**
-     * @brief Поиск пары по заданному ключу
-     * @param key ключ для поиска
-     * @return адрес записи или NAN
-     */
-    int findEntry(const K& key) {
-        return findNextMatchingEntry(
-                key,
-                [key](MyMapEntry* found){
-                    return *(found->key) == key;
-                },
-                [key](MyMapEntry* found){
-                    return found == nullptr || found->isEmpty();
-                }
-        );
-    }
-
-    /**
-     * @brief Поиск пустого места для записи
-     * @param key ключ записи
-     * @return адрес пустого места или NAN
-     */
-    int findFreeHashForEntry(const K& key) {
-        return findNextMatchingEntry(
-                key,
-                [key](MyMapEntry* found){
-                    return found == nullptr || *(found->key) == key || found->isEmpty();
-                }
-        );
-    }
-
-    /**
-     * @brief Поиск пары по заданному предикату
-     * @param key ключ, с которого следует начать поиск
-     * @param predicate предикат для найденного ключа
-     * @param stopCondition условие остановки поиска
-     * @return адрес записи или NAN
-     */
-    int findNextMatchingEntry(const K& key, const std::function<bool(MyMapEntry*)>& predicate, const std::function<bool(MyMapEntry*)>& stopCondition = nullptr) {
-        int keyHash = computeKeyHash(key);
-
-        if(!std::isnan(keyHash)) {
-            for(int i = 0; i < capacity; i++) {
-                if(stopCondition != nullptr && stopCondition(entries[keyHash])) {
-                    break;
-                }
-                if(predicate(entries[keyHash])) {
-                    return keyHash;
-                }
-                // Ограничиваем вместимостью
-                keyHash = (keyHash + collisionShift) % capacity;
-            }
-        }
-
-        return NAN;
-    }
-
-    /**
      * @brief Удваивает размер и заново хеширует все ключи
      */
     #pragma clang diagnostic push
@@ -103,14 +46,15 @@ class MyMap {
 
         int oldCapacity = capacity;
         capacity *= 2;
+        size = 0;
 
         entries = new MyMapEntry*[capacity];
-        clear();
 
         for(int i = 0; i < oldCapacity; i++) {
             MyMapEntry* entry = oldEntries[i];
             if(entry != nullptr && !entry->isEmpty()) {
                 put(*(entry->key), *(entry->value));
+                delete entry;
             }
         }
 
@@ -120,9 +64,14 @@ class MyMap {
 
     struct MyMapEntry {
         const K* key;
-        V* value;
+        const V* value;
 
-        MyMapEntry(const K* key, V* value): key(key), value(value) {}
+        MyMapEntry(const K* key, const V* value): key(key), value(value) {}
+
+        ~MyMapEntry() {
+            delete key;
+            delete value;
+        }
 
         bool isEmpty() {
             return key == nullptr;
@@ -131,8 +80,10 @@ class MyMap {
 
 public:
 
-    MyMap(int capacity = 16, double defaultLoadFactor = 0.75): size(0), capacity(capacity), defaultLoadFactor(defaultLoadFactor), entries(new MyMapEntry*[capacity]) {
-        clear();
+    explicit MyMap(int capacity = 16, double defaultLoadFactor = 0.75): size(0), capacity(capacity), defaultLoadFactor(defaultLoadFactor), entries(new MyMapEntry*[capacity]) {
+        for(int i = 0; i < capacity; i++) {
+            entries[i] = nullptr;
+        }
     }
 
     ~MyMap() {
@@ -178,13 +129,22 @@ public:
      * @return значение по ключу или NULL если значение не найдено
      */
     bool get(const K& key, V& value) {
-        int entryHash = findEntry(key);
+        int keyHash = computeKeyHash(key);
 
-        if(std::isnan(entryHash))
-            return false;
+        for(int i = 0; i < size; i++) {
+            if(entries[keyHash] != nullptr) {
+                if(!entries[keyHash]->isEmpty() && *(entries[keyHash]->key) == key) {
+                    value = *(entries[keyHash]->value);
+                    return true;
+                }
+            } else {
+                return false;
+            }
+            // Ограничиваем вместимостью
+            keyHash = (keyHash + collisionShift) % capacity;
+        }
 
-        value = *(entries[entryHash]->value);
-        return true;
+        return false;
     }
 
     /**
@@ -193,7 +153,21 @@ public:
      * @return true если ключ есть, false если нет
      */
     bool containsKey(const K& key) {
-        return !std::isnan(findEntry(key));
+        int keyHash = computeKeyHash(key);
+
+        for(int i = 0; i < size; i++) {
+            if(entries[keyHash] != nullptr) {
+                if(!entries[keyHash]->isEmpty() && *(entries[keyHash]->key) == key) {
+                    return true;
+                }
+            } else {
+                return false;
+            }
+            // Ограничиваем вместимостью
+            keyHash = (keyHash + collisionShift) % capacity;
+        }
+
+        return false;
     }
 
     /**
@@ -202,29 +176,39 @@ public:
      * @param value значение
      * @return true если значение
      */
-    bool put(const K& key, V& value) {
-        int nextFreeIndex = findFreeHashForEntry(key);
+    bool put(const K& key, const V& value) {
+        int keyHash = computeKeyHash(key);
 
-        if(std::isnan(nextFreeIndex)) {
-            // Вы что, задали load factor 1.0? Да чтоб вас...
-            rehash();
-            nextFreeIndex = findFreeHashForEntry(key);
-            if(std::isnan(nextFreeIndex)) {
-                // Так, а это уже страшно...
-                throw std::runtime_error("Unable to find free hash after MyMap rehash :I");
+        for(int i = 0; i < capacity; i++) {
+            if(entries[keyHash] == nullptr || entries[keyHash]->isEmpty() || *(entries[keyHash]->key) == key) {
+                std::cout << "Adding entry (" << keyHash << ") [" << key << "] = " << value << ";" << std::endl;
+
+                // MEMORY LEAK POSSIBLE HERE
+                // But won't happen c:
+                // Я ЗНАЛ, Я ЗНАЛ, ЧТО ЛОКАЛЬНЫЕ ПЕРЕМЕННЫЕ
+                // С УКАЗАТЕЛЯМИ ПЛОХО СОЧЕТАЮТСЯ!
+                K* keyP = new K;
+                *keyP = key;
+                V* valueP = new V;
+                *valueP = value;
+
+                entries[keyHash] = new MyMapEntry(keyP, valueP);
+
+                size++;
+
+                if(getLoadFactor() >= defaultLoadFactor) {
+                    std::cout << "Rehashing!" << std::endl;
+                    rehash();
+                    std::cout << "Rehashing done!" << std::endl;
+                }
+
+                return true;
             }
+            // Ограничиваем вместимостью
+            keyHash = (keyHash + collisionShift) % capacity;
         }
 
-        if(entries[nextFreeIndex] == nullptr || entries[nextFreeIndex]->isEmpty())
-            size++;
-
-        entries[nextFreeIndex] = new MyMapEntry(&key, &value);
-
-        // load factor больше максимального - увеличиваем размер!
-        if(getLoadFactor() > defaultLoadFactor)
-            rehash();
-
-        return true;
+        return false;
     }
 
     /**
@@ -233,15 +217,23 @@ public:
      * @return удалённое значение или NULL если значение не найдено
      */
     bool remove(const K& key) {
-        int entryHash = findEntry(key);
+        int keyHash = computeKeyHash(key);
 
-        if(std::isnan(entryHash))
-            return false;
-
-        delete entries[entryHash];
-        entries[entryHash] = placeholder;
-        size--;
-        return true;
+        for(int i = 0; i < size; i++) {
+            if(entries[keyHash] != nullptr) {
+                if(!entries[keyHash]->isEmpty() && *entries[keyHash]->key == key) {
+                    delete entries[keyHash];
+                    entries[keyHash] = placeholder;
+                    size--;
+                    return true;
+                }
+            } else {
+                return false;
+            }
+            // Ограничиваем вместимостью
+            keyHash = (keyHash + collisionShift) % capacity;
+        }
+        return false;
     }
 
     /**
@@ -250,9 +242,12 @@ public:
      */
     void clear() {
         for(int i = 0; i < capacity; i++) {
-            //delete entries[i];
-            entries[i] = nullptr;
+            if(entries[i] != nullptr) {
+                delete entries[i];
+                entries[i] = nullptr;
+            }
         }
+        size = 0;
     }
 
     /**
@@ -265,9 +260,12 @@ public:
         int stopper = 0;
         for(int i = 0; i < capacity && stopper < size; i++) {
             if(entries[i] != nullptr && !entries[i]->isEmpty()) {
+                // Тут выкидывается Memory Access Violation
+                // Ссылка удаляется вместе с контекстом функции и не сохраняется в указатель?
+
                 ss << "    `" << *(entries[i]->key) << "` = `" << *(entries[i]->value) << "`\n";
+                stopper++;
             }
-            stopper++;
         }
         ss << "}";
         return ss.str();
@@ -284,22 +282,25 @@ size_t strHash(const K& key) {
     return h;
 }
 
-std::map<std::string, std::function<void(std::istringstream &)>> initCommands(
+std::map<std::string, std::function<void(std::istringstream&)>> initCommands(
         MyMap<std::basic_string<char>, std::basic_string<char>, strHash>* myMap
 ) {
     return {
             {"put", [myMap](std::istringstream& args){
                 std::string key, value;
-                args >> key >> value;
-                myMap->put(key, value);
-                std::cout << "New entry in map: {" << key << ", " << value << "}" << std::endl;
+                args >> key >> std::ws >> value;
+                if(myMap->put(key, value)) {
+                    std::cout << "New entry in map: {" << key << ", " << value << "}" << std::endl;
+                } else {
+                    std::cout << "Unable to put new entry!" << std::endl;
+                }
             }},
             {"get", [myMap](std::istringstream& args){
                 std::string key;
                 std::string value = "none";
                 args >> key;
-                myMap->get(key, value);
-                std::cout << "Value associated with key " << key << ": " << value;
+                bool res = myMap->get(key, value);
+                std::cout << "[" << res << "] Value associated with key " << key << ": " << value << std::endl;
             }},
             {"contains", [myMap](std::istringstream& args){
                 std::string key;
@@ -341,6 +342,8 @@ std::map<std::string, std::function<void(std::istringstream &)>> initCommands(
 }
 
 int main() {
+    //testMe();
+
     auto myMap = new MyMap<std::string, std::string, strHash>();
 
     std::map<std::string, std::function<void(std::istringstream&)>> commands = initCommands(myMap);
@@ -359,9 +362,9 @@ int main() {
                 break;
 
             auto cmdPos = commands.find(command);
-            if(cmdPos != commands.end())
+            if(cmdPos != commands.end()) {
                 cmdPos->second(splitStream);
-            else {
+            } else {
                 std::cout << "Command `" << command << "` not found! Use `help` to see list of available commands" << std::endl;
             }
         }
