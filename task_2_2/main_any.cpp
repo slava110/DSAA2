@@ -29,16 +29,8 @@
 #include "hashmap.hpp"
 #include "simplehash.hpp"
 
-class Product {
-    std::string name;
-    unsigned long long cost;
-
-public:
-    Product(std::string name, unsigned long long int cost) : name(std::move(name)), cost(cost) {}
-};
-
 std::map<std::string, std::function<void(std::istringstream&)>> initCommands(
-        MyMap<unsigned long, Product*, ulongHash>* myMap
+        MyMap<std::basic_string<char>, std::basic_string<char>, strHash>* myMap
 ) {
     return {
             {"put", [myMap](std::istringstream& args){
@@ -97,9 +89,7 @@ std::map<std::string, std::function<void(std::istringstream&)>> initCommands(
 }
 
 int main() {
-    auto myMap = new MyMap<unsigned long, Product*, ulongHash>();
-
-    myMap->put(999999, new Product("Test", 15));
+    auto myMap = new MyMap<std::string, std::string, strHash>();
 
     std::map<std::string, std::function<void(std::istringstream&)>> commands = initCommands(myMap);
 
